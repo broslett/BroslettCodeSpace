@@ -18,6 +18,7 @@ dp_new_pipeline <- function(name = "Untitled pipeline") {
     description = "",
     created = timestamp_now(),
     modified = timestamp_now(),
+    engine = "auto",
     sources = list(),
     transforms = list(),
     joins = list(base_source_id = NULL, steps = list()),

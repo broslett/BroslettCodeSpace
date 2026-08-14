@@ -5,10 +5,10 @@ documents, repair the fields you need to match on, link everything into one
 table, shape the output, export it — then save the whole thing as a pipeline
 you can re-run next month with one click or one command.
 
-Built with Shiny for the interface and plain R for the engine. Every piece of
-configuration lives in an ordinary JSON file next to your data, so pipelines
-are easy to find, read, diff, copy between machines and check into version
-control.
+Built with Shiny for the interface and DuckDB for the execution. Every piece
+of configuration lives in an ordinary JSON file next to your data, so
+pipelines are easy to find, read, diff, copy between machines and check into
+version control.
 
 ---
 
@@ -39,15 +39,23 @@ R 4.1 or newer and these packages:
 
 ```r
 install.packages(c("shiny", "bslib", "DT", "shinyjs",
-                   "jsonlite", "data.table", "readxl", "writexl"))
+                   "jsonlite", "data.table", "readxl", "writexl",
+                   "duckdb", "DBI"))
 ```
+
+`duckdb` is optional but recommended -- see [Engines](#engines) below. Without
+it everything still works, just in R.
 
 On Debian or Ubuntu the packaged builds are quicker:
 
 ```bash
 sudo apt-get install -y r-base-core r-cran-shiny r-cran-bslib r-cran-dt \
-  r-cran-shinyjs r-cran-jsonlite r-cran-data.table r-cran-readxl r-cran-writexl
+  r-cran-shinyjs r-cran-jsonlite r-cran-data.table r-cran-readxl \
+  r-cran-writexl r-cran-dbi
 ```
+
+DuckDB is not in the Ubuntu archive; install it from R with
+`install.packages("duckdb")`.
 
 ---
 
@@ -113,6 +121,64 @@ endings. Then save the pipeline so it can be run again.
 
 ---
 
+## Engines
+
+The pipeline can be executed two ways, and they are required to agree.
+
+**DuckDB** (default when installed) turns the whole pipeline into SQL: the
+CSVs are read by DuckDB's scanner, and the matching, filtering, sorting and
+de-duplicating happen inside its query engine.
+
+On the four-table example pipeline scaled up — transactions joined to
+customers and two mapping tables, with key repair, a filter, number and date
+formatting and a sort:
+
+| Input rows | R | DuckDB |
+|---:|---:|---:|
+| 500,000 | 34.3s | 9.0s |
+| 2,000,000 | 131.3s | 33.8s |
+
+Same output, byte for byte, in both cases.
+
+**R** is the reference implementation. It is what `tests/test_engine.R`
+pins down, and it is what runs when DuckDB is unavailable.
+
+The engine is chosen per pipeline on the last screen, or with `--engine`:
+
+```bash
+Rscript run_pipeline.R pipelines/monthly.json --engine duckdb
+Rscript run_pipeline.R pipelines/monthly.json --engine r
+Rscript run_pipeline.R pipelines/monthly.json               # auto
+```
+
+On `auto` — the default — DuckDB is used whenever it can reproduce the
+pipeline exactly. Three transformations have no faithful SQL translation:
+
+| Operation | Why |
+|---|---|
+| Change case → title | R's rule leaves letters after an apostrophe alone; expressing that needs case conversion inside a regex replacement, which RE2 has no way to do |
+| Round number | R rounds half-to-even and then formats, dropping trailing zeros; SQL rounds half-away-from-zero and keeps them |
+| Remove accents | R transliterates (`ß` becomes `ss`, non-Latin becomes `?`); DuckDB's `strip_accents` only removes diacritics. Different operations, not two spellings of one |
+
+A pipeline using one of these runs in R instead, and the run log says so.
+Nothing is silently approximated: `--engine duckdb` on such a pipeline is an
+error rather than a near-enough answer.
+
+Otherwise both engines produce byte-identical exports. That is not an
+aspiration but a test: `tests/test_duckdb.R` runs every operation and the
+whole example pipeline through both and compares the results, down to the
+bytes of the exported file.
+
+**One documented exception.** Upper- and lower-casing go through glibc in R
+and through ICU in DuckDB, and the two disagree on the handful of characters
+Unicode gives a special casing rule. In practice that means the German sharp
+s: `straße` uppercases to `STRAßE` in R and `STRAẞE` in DuckDB. Each engine is
+self-consistent, so joins and comparisons still behave, but the two are not
+byte-identical on such text. The test pins this exact case so the exception
+cannot quietly grow.
+
+---
+
 ## Re-running out of the same folders
 
 This is the point of saving a pipeline. Once saved, the same configuration can
@@ -158,9 +224,11 @@ datapipe/
   R/
     utils.R                 helpers, path handling, locale
     i18n.R                  string lookup
-    ops.R                   the transformation library
+    ops.R                   the transformation library (the specification)
     io.R                    readers and writers
-    pipeline.R              spec, validation, join engine, execution
+    pipeline.R              spec, validation, and the R execution engine
+    sql.R                   the same transformations, translated to SQL
+    engine_duckdb.R         the DuckDB execution engine and engine choice
   locale/en.json            every visible string
   pipelines/                saved pipelines (JSON)
   examples/                 example data and its generator
@@ -192,13 +260,21 @@ is the place to reword labels for in-house vocabulary without touching R code.
 ## Testing
 
 ```bash
-Rscript tests/test_engine.R
+Rscript tests/test_engine.R     # the engine's behaviour
+Rscript tests/test_duckdb.R     # DuckDB agrees with R, operation by operation
 ```
 
-157 checks covering every transformation operation, key building, all six join
+`test_engine.R` has 157 checks covering every transformation operation, key building, all six join
 types, duplicate and blank-key handling, name-conflict resolution, filtering,
 sorting, de-duplication, reader/writer round-trips, UTF-8 integrity, pipeline
 save/load/migration, and an end-to-end run of the example.
+
+`test_duckdb.R` has 132 and is a differential test rather than a second set
+of expectations: for every transformation, every join type, every filter
+condition and the example pipeline as a whole, it runs both engines over the
+same input and asserts the results are identical -- down to the bytes of the
+exported file. If a SQL translation ever drifts from the R behaviour, that
+test fails rather than the user finding out from a wrong report.
 
 The example data is deliberately awkward — account numbers with three
 different punctuation styles, an Excel export that dropped its leading zeros,
@@ -225,3 +301,5 @@ Things worth knowing, because they are decisions rather than accidents:
   many rows matched at each join. Unmatched rows are a warning, never silent.
 - **A field named in a pipeline that is missing from the data is an error**,
   not a silently empty column.
+- **The two engines must agree.** Where SQL cannot reproduce R exactly, the
+  run falls back to R rather than returning something close.

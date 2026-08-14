@@ -1,16 +1,13 @@
 {
   "_language_name": "English",
-
   "app.title": "Data Pipeline Builder",
   "app.subtitle": "Import, transform, link and export tabular data",
-
   "nav.start": "1. Start",
   "nav.sources": "2. Import files",
   "nav.keys": "3. Linking fields",
   "nav.join": "4. Combine tables",
   "nav.final": "5. Final table",
   "nav.export": "6. Export & save",
-
   "start.heading": "Start a pipeline",
   "start.existing": "Run a saved pipeline",
   "start.existing.help": "Pick a pipeline you saved earlier. It re-reads the same folders, so a monthly job is one click.",
@@ -25,7 +22,6 @@
   "start.description": "Description",
   "start.root": "Project folder",
   "start.root.help": "File paths are saved relative to this folder, so the pipeline still works if the whole folder moves or is copied.",
-
   "src.heading": "Import files",
   "src.help": "Add each data file and each mapping document. Everything is read as text so that leading zeros and long reference numbers survive intact.",
   "src.add": "Add file",
@@ -55,7 +51,6 @@
   "src.preview": "Preview",
   "src.rows": "{n} rows",
   "src.none": "No files imported yet.",
-
   "keys.heading": "Linking fields",
   "keys.help": "Clean up the fields you will match on. Reference numbers rarely line up between systems: strip the punctuation, pad the zeros back on, and the join will find them.",
   "keys.add": "Add a field transformation",
@@ -68,7 +63,6 @@
   "keys.preview.before": "Before",
   "keys.preview.after": "After",
   "keys.none": "No transformations yet. You can also skip this step if your keys already match.",
-
   "join.heading": "Combine tables",
   "join.help": "Choose the table that drives the output, then link the others onto it one at a time.",
   "join.base": "Base table",
@@ -104,7 +98,6 @@
   "join.none": "No links yet. With one table you can go straight to the final step.",
   "join.check": "Check the match",
   "join.check.result": "{matched} of {total} base rows found a match; {unmatched} did not.",
-
   "final.heading": "Final table",
   "final.help": "Choose which columns to keep, rename them, put them in order, and apply any last formatting.",
   "final.refresh": "Refresh from the combined table",
@@ -129,7 +122,6 @@
   "final.sort": "Sort",
   "final.sort.add": "Add sort column",
   "final.none": "Import and combine your files first.",
-
   "export.heading": "Export & save",
   "export.file": "Export to",
   "export.format": "Format",
@@ -143,7 +135,14 @@
   "export.save.help": "Saves to the pipelines folder. You can then re-run it from the first screen, or from the command line with run_pipeline.R.",
   "export.saved": "Pipeline saved to {path}",
   "export.cli": "Re-run from a scheduler or batch file",
-
+  "export.engine": "Engine",
+  "export.engine.auto": "Automatic (DuckDB when possible)",
+  "export.engine.duckdb": "DuckDB",
+  "export.engine.r": "R",
+  "export.engine.ready": "DuckDB {version} will run this pipeline.",
+  "export.engine.missing": "DuckDB is not installed; running in R. Install it with install.packages(\"duckdb\").",
+  "export.engine.fallback": "Will run in R: no exact SQL equivalent for {ops}.",
+  "run.engine": "  Engine: {engine}.",
   "run.reading": "Reading files…",
   "run.transforming": "Transforming linking fields…",
   "run.joining": "Combining tables…",
@@ -155,7 +154,6 @@
   "run.failed": "The run failed",
   "run.success": "Wrote {rows} rows and {cols} columns to {path} in {secs}s.",
   "run.preview": "Result preview",
-
   "common.problems": "Fix these before running",
   "common.ready": "Ready to run.",
   "common.remove": "Remove",

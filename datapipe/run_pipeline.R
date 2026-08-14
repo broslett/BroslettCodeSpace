@@ -22,7 +22,7 @@ options(datapipe.app_dir = app_dir)
 suppressPackageStartupMessages({
   library(jsonlite); library(data.table)
 })
-for (f in c("utils.R", "i18n.R", "ops.R", "io.R", "pipeline.R")) {
+for (f in c("utils.R", "i18n.R", "ops.R", "io.R", "pipeline.R", "sql.R", "engine_duckdb.R")) {
   source(file.path(app_dir, "R", f), local = FALSE)
 }
 dp_set_language(Sys.getenv("DATAPIPE_LANG", "en"), file.path(app_dir, "locale"))
@@ -48,6 +48,7 @@ usage <- function() {
       "  --describe      Print the pipeline outline and exit without running\n",
       "  --validate      Check the pipeline and exit without running\n",
       "  --quiet         Only print errors\n",
+      "  --engine <e>    auto (default), duckdb, or r\n",
       "  --list          List pipelines in the pipelines/ folder and exit\n",
       sep = "")
 }
@@ -75,7 +76,7 @@ positional <- args[!grepl("^--", args)]
 flag_idx <- which(grepl("^--", args) & !grepl("=", args))
 consumed <- intersect(flag_idx + 1, seq_along(args))
 consumed <- consumed[!grepl("^--", args[consumed])]
-value_flags <- c("root", "out", "format")
+value_flags <- c("root", "out", "format", "engine")
 consumed <- consumed[vapply(consumed, function(i) sub("^--", "", args[i - 1]) %in% value_flags, logical(1))]
 positional <- args[setdiff(which(!grepl("^--", args)), consumed)]
 
@@ -129,11 +130,19 @@ if (!is.null(out_override)) {
 fmt_override <- get_flag("format", NULL)
 if (!is.null(fmt_override)) spec$export$format <- fmt_override
 
+engine <- get_flag("engine", NULL)
+if (!is.null(engine) && !engine %in% c("auto", "duckdb", "r")) {
+  cat("Error: --engine must be auto, duckdb or r.\n"); quit(status = 2)
+}
+
 say("Running '", scalar(spec$name, basename(pipeline_path)), "'\n")
-say("  root: ", root, "\n\n")
+say("  root:   ", root, "\n")
+say("  engine: ", engine %||% scalar(spec$engine, "auto"),
+    if (dp_duckdb_available()) paste0(" (duckdb ", dp_duckdb_version(), " available)")
+    else " (duckdb not installed, using R)", "\n\n")
 
 res <- tryCatch(
-  dp_execute(spec, root = root),
+  dp_run(spec, root = root, engine = engine),
   error = function(e) {
     cat("\nFAILED: ", conditionMessage(e), "\n", sep = "")
     quit(status = 1)
@@ -145,5 +154,6 @@ if (length(res$warnings)) {
   say("\nWarnings:\n")
   for (w in res$warnings) say("  ! ", w, "\n")
 }
-say("\nDone in ", sprintf("%.2f", res$elapsed), "s -> ", res$export_path, "\n")
+say("\nDone in ", sprintf("%.2f", res$elapsed), "s using the ",
+    res$engine %||% "r", " engine -> ", res$export_path, "\n")
 quit(status = 0)

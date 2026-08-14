@@ -20,7 +20,7 @@ suppressPackageStartupMessages({
   library(shiny); library(bslib); library(DT)
   library(jsonlite); library(data.table); library(shinyjs)
 })
-for (f in c("utils.R", "i18n.R", "ops.R", "io.R", "pipeline.R")) {
+for (f in c("utils.R", "i18n.R", "ops.R", "io.R", "pipeline.R", "sql.R", "engine_duckdb.R")) {
   source(file.path(app_dir, "R", f), local = FALSE)
 }
 dp_set_language(Sys.getenv("DATAPIPE_LANG", "en"), file.path(app_dir, "locale"))
@@ -78,6 +78,7 @@ server <- function(input, output, session) {
   rv <- reactiveValues(
     spec = dp_new_pipeline("New pipeline"),
     root = app_dir,
+    engine = "auto",
     version = 0L,      # bumped on structural change -> re-render dynamic UI
     tables = NULL,     # cached preview reads, keyed by source id
     tables_key = NULL,
@@ -114,6 +115,8 @@ server <- function(input, output, session) {
 
     s$name <- gv("pipe_name", s$name)
     s$description <- gv("pipe_desc", s$description)
+    s$engine <- gv("exp_engine", s$engine %||% "auto")
+    rv$engine <- s$engine
 
     # --- sources
     if (length(s$sources)) {
@@ -310,8 +313,8 @@ server <- function(input, output, session) {
       probe$final$filter <- list(mode = "all", conditions = list())
       probe$final$sort <- list()
       probe$final$dedupe <- list(enabled = FALSE)
-      j <- tryCatch(dp_execute(probe, rv$root, stop_after = "joins",
-                               preview_rows = 50L)$data,
+      j <- tryCatch(dp_run(probe, rv$root, stop_after = "joins",
+                           preview_rows = 50L, engine = rv$engine)$data,
                     error = function(e) NULL)
       if (!is.null(j)) cols <- names(j)
     }
@@ -328,8 +331,8 @@ server <- function(input, output, session) {
     probe$final$filter <- list(mode = "all", conditions = list())
     probe$final$sort <- list()
     probe$final$dedupe <- list(enabled = FALSE)
-    tryCatch(dp_execute(probe, rv$root, stop_after = "joins",
-                        preview_rows = PREVIEW_ROWS)$data,
+    tryCatch(dp_run(probe, rv$root, stop_after = "joins",
+                    preview_rows = PREVIEW_ROWS, engine = rv$engine)$data,
              error = function(e) NULL)
   })
 
@@ -995,7 +998,8 @@ server <- function(input, output, session) {
   observeEvent(input$fin_preview, {
     collect()
     withProgress(message = "Building preview", value = 0.5, {
-      res <- tryCatch(dp_execute(rv$spec, rv$root, stop_after = "final", preview_rows = PREVIEW_ROWS),
+      res <- tryCatch(dp_run(rv$spec, rv$root, stop_after = "final",
+                             preview_rows = PREVIEW_ROWS, engine = rv$engine),
                       error = function(e) { showNotification(conditionMessage(e), type = "error", duration = 10); NULL })
       output$final_preview <- renderDT({
         req(res)
@@ -1034,6 +1038,12 @@ server <- function(input, output, session) {
                       selected = scalar(s$export$options$eol, "lf"), width = "100%"),
           div(checkboxInput("exp_header", tr("export.header"), as_bool(s$export$options$header, TRUE)),
               checkboxInput("exp_stamp", tr("export.timestamp"), as_bool(s$export$timestamp_filename)))),
+        layout_columns(col_widths = c(4, 8),
+          selectInput("exp_engine", tr("export.engine"),
+                      choices = stats::setNames(c("auto", "duckdb", "r"),
+                        c(tr("export.engine.auto"), tr("export.engine.duckdb"), tr("export.engine.r"))),
+                      selected = scalar(s$engine, "auto"), width = "100%"),
+          div(class = "mt-4 small text-muted", uiOutput("engine_status"))),
         div(class = "d-flex gap-2 flex-wrap mt-2",
           actionButton("do_run", tr("export.run"), class = "btn-success"),
           downloadButton("do_download", tr("export.download"), class = "btn-outline-primary"))
@@ -1052,6 +1062,20 @@ server <- function(input, output, session) {
       )),
       card(card_header(tr("run.preview")), card_body(DTOutput("result_preview")))
     )
+  })
+
+  output$engine_status <- renderUI({
+    rv$version
+    if (!dp_duckdb_available()) {
+      return(span(class = "text-warning", tr("export.engine.missing")))
+    }
+    bad <- sql_untranslatable_ops(rv$spec)
+    if (length(bad)) {
+      span(class = "text-warning",
+           tr("export.engine.fallback", ops = paste(bad, collapse = ", ")))
+    } else {
+      span(class = "text-success", tr("export.engine.ready", version = dp_duckdb_version()))
+    }
   })
 
   output$cli_hint <- renderUI({
@@ -1075,7 +1099,8 @@ server <- function(input, output, session) {
     }
     withProgress(message = tr("run.reading"), value = 0, {
       res <- tryCatch(
-        dp_execute(s, rv$root, progress = function(frac, msg) setProgress(value = frac, message = msg)),
+        dp_run(s, rv$root, engine = rv$engine,
+               progress = function(frac, msg) setProgress(value = frac, message = msg)),
         error = function(e) { showNotification(paste0(tr("run.failed"), ": ", conditionMessage(e)),
                                                type = "error", duration = NULL); NULL })
       rv$result <- res
@@ -1098,7 +1123,8 @@ server <- function(input, output, session) {
     tagList(
       div(class = "dp-ready mb-2",
         tr("run.success", rows = nrow(res$data), cols = ncol(res$data),
-           path = res$export_path %||% "(preview only)", secs = sprintf("%.2f", res$elapsed))),
+           path = res$export_path %||% "(preview only)", secs = sprintf("%.2f", res$elapsed)),
+        span(class = "text-muted", tr("run.engine", engine = res$engine %||% "r"))),
       if (length(res$warnings)) div(class = "dp-problems mb-2",
         tags$strong(tr("run.warnings")), tags$ul(lapply(res$warnings, tags$li)))
     )
@@ -1123,7 +1149,7 @@ server <- function(input, output, session) {
       s <- collect()
       res <- rv$result
       if (is.null(res)) {
-        res <- dp_execute(s, rv$root, stop_after = "final")
+        res <- dp_run(s, rv$root, stop_after = "final", engine = rv$engine)
         rv$result <- res
       }
       dp_write_file(res$data, file, scalar(s$export$format, "csv"), s$export$options)
@@ -1251,7 +1277,8 @@ server <- function(input, output, session) {
           probe$final$fields <- list()
           probe$final$filter <- list(mode = "all", conditions = list())
           probe$final$sort <- list(); probe$final$dedupe <- list(enabled = FALSE)
-          r <- tryCatch(dp_execute(probe, rv$root, stop_after = "joins", preview_rows = PREVIEW_ROWS),
+          r <- tryCatch(dp_run(probe, rv$root, stop_after = "joins",
+                               preview_rows = PREVIEW_ROWS, engine = rv$engine),
                         error = function(e) e)
           if (inherits(r, "error")) return(div(class = "text-danger small mt-2", conditionMessage(r)))
           msgs <- grep(paste0("join onto"), unlist(r$log), ignore.case = TRUE, value = TRUE)
