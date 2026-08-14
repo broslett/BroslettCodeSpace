@@ -146,13 +146,25 @@ dp_execute_duckdb <- function(spec, root = NULL, stop_after = "export", progress
   tick <- function(frac, msg) if (is.function(progress)) progress(frac, msg)
   t0 <- Sys.time()
 
-  # shared_home keeps any downloaded extensions in ~/.duckdb instead of a
-  # per-session temp dir (and silences the notice about it). Older duckdb
-  # builds have no such argument, hence the fallback.
-  drv <- tryCatch(duckdb::duckdb(shared_home = TRUE),
+  # shared_home = FALSE keeps everything in this session's temp directory:
+  # nothing is written to the user's home, and nothing outlives the run.
+  # Older duckdb builds have no such argument, hence the fallback.
+  drv <- tryCatch(duckdb::duckdb(shared_home = FALSE),
                   error = function(e) duckdb::duckdb())
   con <- DBI::dbConnect(drv)
   on.exit(try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE), add = TRUE)
+
+  # Close DuckDB's only route to the network. It ships able to fetch extensions
+  # on demand from extensions.duckdb.org; this application needs none of them,
+  # so the capability is switched off rather than left to chance. Note that
+  # enable_external_access is deliberately NOT set: it would also block reading
+  # the user's own files, which is the entire job.
+  for (s in c("SET autoinstall_known_extensions = false",
+              "SET autoload_known_extensions = false",
+              "SET allow_community_extensions = false")) {
+    try(DBI::dbExecute(con, s), silent = TRUE)
+  }
+
   DBI::dbExecute(con, "SET preserve_insertion_order = true")
   # Allow spilling so a table larger than memory still runs.
   try(DBI::dbExecute(con, paste0("SET temp_directory = ", sq(tempdir()))), silent = TRUE)

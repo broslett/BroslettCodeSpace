@@ -17,12 +17,18 @@ version control.
 ```bash
 cd datapipe
 
-# generate the example data (first time only)
-Rscript examples/make_examples.R
+# install what's needed (the only step that uses the internet)
+Rscript setup/install_packages.R
 
-# launch the app, then open the address it prints
-Rscript app.R
+# check the installation
+Rscript verify.R
+
+# launch the app, then open http://127.0.0.1:8080
+./start-app.sh            # Windows: start-app.bat
 ```
+
+The example data ships with the archive. To regenerate it:
+`Rscript examples/make_examples.R`
 
 Press **Load** on the first screen to open the worked example, then walk
 through the six steps to see how it is put together.
@@ -30,7 +36,7 @@ through the six steps to see how it is put together.
 To run a saved pipeline without the interface:
 
 ```bash
-Rscript run_pipeline.R pipelines/example_monthly_sales.json
+./run-pipeline.sh example_monthly_sales      # Windows: run-pipeline.bat
 ```
 
 ### Requirements
@@ -118,6 +124,33 @@ optionally filter rows, remove duplicates and sort.
 **6. Export & save** — write CSV, TSV, Excel or a custom delimiter, with
 control over the header row, how blanks are written, the delimiter and line
 endings. Then save the pipeline so it can be run again.
+
+---
+
+## Runs entirely on your machine
+
+The application makes **no outbound connections** — no assets from a CDN, no
+update check, no telemetry, nothing. The interface binds to `127.0.0.1` only,
+every stylesheet and script is served from your own R installation, and
+DuckDB's ability to fetch extensions is explicitly switched off on every
+connection it opens.
+
+Check it on your own machine:
+
+```bash
+Rscript verify.R
+```
+
+That confirms the lockdown is in effect, scans the shipped source for anything
+network-capable, and runs both test suites. This release was also verified in a
+network namespace with no interfaces at all: both test suites pass, the runner
+produces its output, the interface serves, and a browser driven through the
+whole application made 33 requests, every one of them to `127.0.0.1`.
+
+[`SECURITY.md`](SECURITY.md) has the details, including how to reproduce that
+check and what to be careful about if you change `DATAPIPE_HOST`.
+[`setup/OFFLINE-INSTALL.md`](setup/OFFLINE-INSTALL.md) covers installing on a
+machine with no internet at all.
 
 ---
 
@@ -239,6 +272,19 @@ datapipe/
 The interface never transforms data itself — previews and runs both go through
 the same `dp_execute()` the command-line runner uses. What you see while
 building is what a scheduled re-run produces.
+
+---
+
+## Packaging it up
+
+To produce an archive you can copy to another machine:
+
+```bash
+tools/make_zip.sh 1.0.0      # -> dist/datapipe-1.0.0.zip
+```
+
+Unzip it anywhere, install the packages, and run `verify.R`. Nothing in the
+archive is machine-specific, and saved pipelines travel with it.
 
 ---
 
