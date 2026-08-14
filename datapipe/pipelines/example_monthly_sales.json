@@ -1,0 +1,187 @@
+{
+  "spec_version": 1,
+  "name": "Example - monthly sales extract",
+  "description": "Transactions joined to customers and to two mapping tables. Demonstrates key repair (punctuation stripped, leading zeros restored), a mapping table with a duplicate key, a lookup keyed off a previously joined column, and a filtered, renamed, reordered output.",
+  "created": "2026-08-14T00:00:00+0000",
+  "modified": "2026-08-14T00:00:00+0000",
+
+  "sources": [
+    {
+      "id": "src_txn",
+      "label": "Transactions",
+      "role": "data",
+      "path_mode": "file",
+      "path": "examples/data/transactions.csv",
+      "dir": "examples/data",
+      "pattern": "transactions*.csv",
+      "pick": "latest",
+      "format": "csv",
+      "options": { "header": true, "delimiter": ",", "skip": 0, "trim_ws": true }
+    },
+    {
+      "id": "src_cust",
+      "label": "Customers",
+      "role": "data",
+      "path_mode": "file",
+      "path": "examples/data/customers.xlsx",
+      "dir": "examples/data",
+      "pattern": "customers*.xlsx",
+      "pick": "latest",
+      "format": "excel",
+      "options": { "header": true, "sheet": "Customers", "skip": 0, "trim_ws": true }
+    },
+    {
+      "id": "src_prod",
+      "label": "Product mapping",
+      "role": "mapping",
+      "path_mode": "file",
+      "path": "examples/data/product_mapping.csv",
+      "dir": "examples/data",
+      "pattern": "product_mapping*.csv",
+      "pick": "latest",
+      "format": "csv",
+      "options": { "header": true, "delimiter": ",", "skip": 0, "trim_ws": true }
+    },
+    {
+      "id": "src_region",
+      "label": "Region mapping",
+      "role": "mapping",
+      "path_mode": "file",
+      "path": "examples/data/region_mapping.csv",
+      "dir": "examples/data",
+      "pattern": "region_mapping*.csv",
+      "pick": "latest",
+      "format": "csv",
+      "options": { "header": true, "delimiter": ",", "skip": 0, "trim_ws": true }
+    }
+  ],
+
+  "transforms": [
+    {
+      "id": "tf_txn_acct",
+      "source_id": "src_txn",
+      "input_field": "Account",
+      "output_field": "AccountKey",
+      "steps": [
+        { "op": "trim", "params": { "side": "both" } },
+        { "op": "case", "params": { "to": "upper" } },
+        { "op": "digits_only", "params": { "keep_decimal": false, "keep_sign": false } },
+        { "op": "left_pad", "params": { "width": 8, "char": "0" } }
+      ]
+    },
+    {
+      "id": "tf_cust_acct",
+      "source_id": "src_cust",
+      "input_field": "AccountNo",
+      "output_field": "AccountKey",
+      "steps": [
+        { "op": "trim", "params": { "side": "both" } },
+        { "op": "digits_only", "params": { "keep_decimal": false, "keep_sign": false } },
+        { "op": "left_pad", "params": { "width": 8, "char": "0" } }
+      ]
+    },
+    {
+      "id": "tf_txn_prod",
+      "source_id": "src_txn",
+      "input_field": "Prod Code",
+      "output_field": "ProductKey",
+      "steps": [
+        { "op": "trim", "params": { "side": "both" } },
+        { "op": "case", "params": { "to": "upper" } }
+      ]
+    },
+    {
+      "id": "tf_prod_code",
+      "source_id": "src_prod",
+      "input_field": "Code",
+      "output_field": "ProductKey",
+      "steps": [
+        { "op": "trim", "params": { "side": "both" } },
+        { "op": "case", "params": { "to": "upper" } }
+      ]
+    }
+  ],
+
+  "joins": {
+    "base_source_id": "src_txn",
+    "steps": [
+      {
+        "id": "j_cust",
+        "right_source_id": "src_cust",
+        "type": "left",
+        "keys": [ { "left": "AccountKey", "right": "AccountKey" } ],
+        "select": ["CustomerName", "Region"],
+        "prefix": "",
+        "suffix": "",
+        "conflict": "suffix",
+        "multi_match": "error",
+        "ignore_case": false,
+        "match_blanks": false
+      },
+      {
+        "id": "j_prod",
+        "right_source_id": "src_prod",
+        "type": "left",
+        "keys": [ { "left": "ProductKey", "right": "ProductKey" } ],
+        "select": ["ProductName", "Category"],
+        "prefix": "",
+        "suffix": "",
+        "conflict": "suffix",
+        "multi_match": "first",
+        "ignore_case": false,
+        "match_blanks": false
+      },
+      {
+        "id": "j_region",
+        "right_source_id": "src_region",
+        "type": "left",
+        "keys": [ { "left": "Region", "right": "Region" } ],
+        "select": ["RegionCode", "Manager"],
+        "prefix": "",
+        "suffix": "",
+        "conflict": "suffix",
+        "multi_match": "error",
+        "ignore_case": true,
+        "match_blanks": false
+      }
+    ]
+  },
+
+  "final": {
+    "fields": [
+      { "source": "Txn Ref",     "output": "Reference", "include": true, "order": 1, "steps": [] },
+      { "source": "AccountKey",  "output": "Account",   "include": true, "order": 2, "steps": [] },
+      { "source": "CustomerName","output": "Customer",  "include": true, "order": 3, "steps": [] },
+      { "source": "Region",      "output": "Region",    "include": true, "order": 4, "steps": [] },
+      { "source": "Manager",     "output": "Manager",   "include": true, "order": 5, "steps": [] },
+      { "source": "ProductName", "output": "Product",   "include": true, "order": 6, "steps": [] },
+      { "source": "Category",    "output": "Category",  "include": true, "order": 7, "steps": [] },
+      {
+        "source": "Amount", "output": "Amount", "include": true, "order": 8,
+        "steps": [ { "op": "format_number", "params": { "decimals": 2, "big_mark": "", "dec_mark": ".", "on_fail": "blank" } } ]
+      },
+      {
+        "source": "Txn Date", "output": "Date", "include": true, "order": 9,
+        "steps": [ { "op": "format_date", "params": { "input_format": "%d/%m/%Y", "output_format": "%Y-%m-%d", "on_fail": "blank" } } ]
+      },
+      { "source": "RegionCode", "output": "Region Code", "include": false, "order": 10, "steps": [] },
+      { "source": "Status",     "output": "Status",      "include": false, "order": 11, "steps": [] }
+    ],
+    "filter": {
+      "mode": "all",
+      "conditions": [
+        { "field": "Status", "op": "not_equals", "value": "void", "ignore_case": true },
+        { "field": "Account", "op": "not_blank", "value": "", "ignore_case": true }
+      ]
+    },
+    "dedupe": { "enabled": false, "keys": [], "keep": "first" },
+    "sort": [ { "field": "Reference", "dir": "asc", "numeric": false } ]
+  },
+
+  "export": {
+    "path": "output/monthly_sales.csv",
+    "format": "csv",
+    "options": { "header": true, "na_string": "", "eol": "lf", "quote_mode": "auto", "bom": false },
+    "timestamp_filename": false
+  }
+}
