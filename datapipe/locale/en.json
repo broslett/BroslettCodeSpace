@@ -105,6 +105,7 @@
   "final.source": "Source column",
   "final.output": "Output name",
   "final.steps": "Formatting",
+  "final.addformat": "+ format",
   "final.up": "Move up",
   "final.down": "Move down",
   "final.selectall": "Include all",

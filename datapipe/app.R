@@ -39,14 +39,23 @@ ui <- page_navbar(
   id = "nav",
   title = tr("app.title"),
   theme = bs_theme(version = 5, preset = "flatly"),
+  # These panels are scrolling forms, not dashboards. As fill containers they
+  # stretch their last card to the viewport and leave a blank slab under it.
+  fillable = FALSE,
   header = tagList(
     useShinyjs(),
     tags$style(HTML("
-      .dp-item { border:1px solid #dee2e6; border-radius:.5rem; padding:.9rem;
-                 margin-bottom:.9rem; background:#fff; }
-      .dp-item h6 { font-weight:600; margin-bottom:.6rem; }
-      .dp-step { border-left:3px solid #18bc9c; background:#f8f9fa;
-                 padding:.6rem .8rem; margin-bottom:.5rem; border-radius:.25rem; }
+      /* Shiny gives every input container a fixed width of 300px. In a dense
+         form that reserves a slab of empty space beside every checkbox, which
+         is what pushed these rows apart and made the screen unusable. Inputs
+         that should fill their column ask for width:100% themselves, and an
+         inline width still wins over this rule. */
+      body .shiny-input-container:not(.shiny-input-container-inline) { width:auto; }
+      .form-group, .shiny-input-container { margin-bottom:.5rem; }
+
+      .dp-item { border:1px solid #dee2e6; border-radius:.5rem; padding:.75rem .85rem;
+                 margin-bottom:.75rem; background:#fff; }
+      .dp-item h6 { font-weight:600; margin-bottom:.5rem; }
       .dp-problems { border-left:4px solid #e74c3c; background:#fdf3f2;
                      padding:.6rem .9rem; border-radius:.25rem; }
       .dp-ready { border-left:4px solid #18bc9c; background:#f2fbf8;
@@ -54,9 +63,93 @@ ui <- page_navbar(
       .dp-log { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.8rem;
                 white-space:pre-wrap; background:#f8f9fa; padding:.75rem;
                 border-radius:.25rem; max-height:22rem; overflow:auto; }
-      .form-group, .shiny-input-container { margin-bottom:.6rem; }
       .dp-narrow .form-control, .dp-narrow .form-select { font-size:.875rem; }
+      /* An htmlwidget reserves 400px before it has rendered anything, which
+         showed as an empty white band under the previews. The wrapper starts
+         collapsed and is opened once there is actually a table to show. */
+      .dp-collapsed { height:0; min-height:0; overflow:hidden; }
       table.dataTable tbody td { font-size:.82rem; white-space:nowrap; }
+      .card { margin-bottom:.85rem; }
+      .card-body { padding:.9rem 1rem; }
+      /* A bslib card body is a flex column, so a bare button stretches to the
+         full width of the card. Keep buttons their natural size. */
+      .card-body > .btn, .card-body > .action-button { align-self:flex-start; }
+
+      /* --- the output-column list -------------------------------------- */
+      /* One line per column instead of a stacked block, so a whole pipeline
+         is visible at once rather than two rows at a time. */
+      .dp-fieldhead, .dp-fieldrow {
+        display:grid; align-items:center; gap:.5rem;
+        grid-template-columns: 1.9rem minmax(7rem, 1fr) minmax(9rem, 22rem) auto;
+      }
+      .dp-fieldhead { font-size:.72rem; text-transform:uppercase; letter-spacing:.04em;
+                      color:#6c757d; padding:0 .5rem .3rem; border-bottom:1px solid #dee2e6;
+                      margin-bottom:.25rem; }
+      .dp-field { border-radius:.35rem; padding:.15rem 0; }
+      .dp-field:nth-of-type(odd) { background:#fafbfc; }
+      .dp-fieldrow { padding:.3rem .5rem; }
+      .dp-fieldrow .shiny-input-container { margin-bottom:0; }
+      .dp-fieldsrc { font-weight:600; font-size:.875rem; overflow:hidden;
+                     text-overflow:ellipsis; white-space:nowrap; }
+      .dp-fieldsrc.is-off { font-weight:400; color:#adb5bd; text-decoration:line-through; }
+      .dp-fieldbtns { display:flex; gap:.25rem; flex-wrap:nowrap; }
+      .dp-fieldbtns .btn { --bs-btn-padding-y:.15rem; --bs-btn-padding-x:.45rem;
+                           --bs-btn-font-size:.78rem; line-height:1.3; }
+      .dp-fieldrow .form-control { padding:.2rem .5rem; font-size:.85rem;
+                                   min-height:auto; height:auto; }
+
+      /* --- transformation steps ---------------------------------------- */
+      .dp-step { border-left:3px solid #18bc9c; background:#f8f9fa;
+                 padding:.45rem .6rem; margin:.35rem 0; border-radius:.25rem; }
+      .dp-step-head { display:flex; flex-wrap:wrap; gap:.4rem .55rem; align-items:flex-end; }
+      .dp-step-num { font-weight:600; color:#6c757d; font-size:.8rem; padding-bottom:.35rem; }
+      .dp-step-op { flex:0 0 13rem; max-width:100%; }
+      .dp-step-param { flex:0 1 auto; min-width:5rem; max-width:11rem; }
+      .dp-step-param > .shiny-input-container > label,
+      .dp-step-param label { font-size:.7rem; margin-bottom:.05rem; color:#6c757d;
+                             white-space:nowrap; }
+      .dp-step-del { margin-left:auto; align-self:center; }
+      .dp-step-desc { font-size:.73rem; color:#6c757d; margin-top:.2rem; }
+      .dp-step .shiny-input-container { margin-bottom:0; }
+      .dp-step .form-control, .dp-step .form-select {
+        padding:.2rem .5rem; font-size:.82rem; min-height:auto; height:auto; }
+      /* Bootstrap reserves the right-hand padding for the dropdown caret;
+         the rule above would otherwise let the caret sit on top of the text. */
+      .dp-step .form-select { padding-right:1.8rem; }
+      .dp-step-param { min-width:6.5rem; }
+      .dp-step .form-check { margin-bottom:.3rem; }
+
+      /* --- the step bar ------------------------------------------------- */
+      /* Below Bootstrap's lg breakpoint the bs3compat shim sets the navbar
+         collapse to display:none and renders no toggler to bring it back, so
+         all six steps simply disappear with no way to reach them. That is what
+         made the interface unusable at heavy browser zoom, where the effective
+         width drops under 992px. Keep the bar visible at every width and let
+         it wrap onto a second line instead of vanishing. */
+      .navbar .navbar-collapse, .navbar .navbar-collapse.collapse { display:flex !important; }
+      /* bs3compat renders a Bootstrap 3 toggle button whose JS never fires
+         under Bootstrap 5 -- a dead hamburger. With the bar always visible it
+         has nothing to do, so take it away. */
+      .navbar .navbar-toggle, .navbar .navbar-toggler { display:none !important; }
+      .navbar { flex-wrap:wrap; row-gap:.15rem; }
+      .navbar .navbar-nav { flex-direction:row; flex-wrap:wrap; }
+      @media (max-width: 991.98px) {
+        .navbar .navbar-nav .nav-link { padding:.25rem .5rem; font-size:.9rem; }
+        .navbar .navbar-brand { font-size:1rem; }
+      }
+
+      /* --- narrow screens and heavy browser zoom ------------------------ */
+      /* At high zoom the effective width is small; stack rather than crush. */
+      @media (max-width: 900px) {
+        .dp-fieldhead { display:none; }
+        .dp-fieldrow { grid-template-columns: 1.9rem 1fr; row-gap:.3rem; }
+        /* Auto-placement would drop the output box into the narrow checkbox
+           column, squeezing it to a couple of characters. Pin the source name
+           and the output box to the wide column, one under the other. */
+        .dp-fieldrow > *:nth-child(2), .dp-fieldrow > *:nth-child(3) { grid-column:2; }
+        .dp-fieldrow > .dp-fieldbtns { grid-column:1 / -1; justify-content:flex-end; }
+        .dp-step-op { flex:1 1 100%; }
+      }
     "))
   ),
   nav_panel(tr("nav.start"),   value = "start",   uiOutput("ui_start")),
@@ -723,35 +816,36 @@ server <- function(input, output, session) {
     )
   }
 
-  # One transformation step: an operation picker plus its parameter controls.
+  # One transformation step: an operation picker plus its parameter controls,
+  # laid out as a single wrapping line so a four-step chain stays readable.
   step_ui <- function(st, prefix, k, owner) {
     op <- scalar(st$op, "trim")
     spec_p <- TF_OPS[[op]]$params %||% list()
     pars <- st$params %||% list()
     div(class = "dp-step",
-      div(class = "d-flex gap-2 align-items-end",
-        div(style = "min-width:16rem;",
-          selectInput(paste0(prefix, "_op_", k), paste0(k, "."), choices = tf_op_labels(),
+      div(class = "dp-step-head",
+        span(class = "dp-step-num", paste0(k, ".")),
+        div(class = "dp-step-op",
+          selectInput(paste0(prefix, "_op_", k), NULL, choices = tf_op_labels(),
                       selected = op, width = "100%")),
-        div(class = "flex-grow-1",
-          if (length(spec_p)) div(class = "row g-2",
-            lapply(names(spec_p), function(nm) {
-              ps <- spec_p[[nm]]
-              val <- pars[[nm]] %||% ps$default
-              id <- paste0(prefix, "_p_", k, "_", nm)
-              div(class = "col-auto", switch(ps$type,
-                text = textInput(id, ps$label, value = scalar(val, ""), width = "12rem",
-                                 placeholder = ps$placeholder %||% ""),
-                number = numericInput(id, ps$label, value = as_num(val, 0), width = "8rem"),
-                choice = selectInput(id, ps$label, choices = ps$choices,
-                                     selected = scalar(val, ps$default), width = "12rem"),
-                logical = div(class = "mt-4", checkboxInput(id, ps$label, as_bool(val, FALSE))),
-                NULL))
-            })
-          ) else div(class = "text-muted small", TF_OPS[[op]]$desc)),
-        actionButton(paste0(prefix, "_delstep_", k), "x", class = "btn-outline-danger btn-sm mb-3")
+        lapply(names(spec_p), function(nm) {
+          ps <- spec_p[[nm]]
+          val <- pars[[nm]] %||% ps$default
+          id <- paste0(prefix, "_p_", k, "_", nm)
+          div(class = "dp-step-param", switch(ps$type,
+            text = textInput(id, ps$label, value = scalar(val, ""), width = "100%",
+                             placeholder = ps$placeholder %||% ""),
+            number = numericInput(id, ps$label, value = as_num(val, 0), width = "6.5rem"),
+            choice = selectInput(id, ps$label, choices = ps$choices,
+                                 selected = scalar(val, ps$default), width = "100%"),
+            logical = checkboxInput(id, ps$label, as_bool(val, FALSE)),
+            NULL))
+        }),
+        actionButton(paste0(prefix, "_delstep_", k), "✕",
+                     class = "btn-outline-danger btn-sm dp-step-del",
+                     title = tr("common.remove"))
       ),
-      if (length(spec_p)) div(class = "text-muted small", TF_OPS[[op]]$desc)
+      div(class = "dp-step-desc", TF_OPS[[op]]$desc)
     )
   }
 
@@ -881,7 +975,8 @@ server <- function(input, output, session) {
       )),
       card(card_header("Columns"), card_body(class = "dp-narrow",
         if (!length(s$final$fields)) div(class = "text-muted", "Press 'Refresh from the combined table' to list the available columns.")
-        else lapply(seq_along(s$final$fields), function(i) field_row(s$final$fields[[i]], i))
+        else tagList(field_head(),
+                     lapply(seq_along(s$final$fields), function(i) field_row(s$final$fields[[i]], i)))
       )),
       card(card_header(tr("final.filter")), card_body(class = "dp-narrow",
         selectInput("filt_mode", tr("final.filter.mode"),
@@ -935,25 +1030,39 @@ server <- function(input, output, session) {
       ),
       card(card_header(tr("run.preview")), card_body(
         actionButton("fin_preview", "Preview the final table", class = "btn-outline-secondary btn-sm mb-2"),
-        DTOutput("final_preview")))
+        div(id = "final_preview_box", class = "dp-collapsed",
+            DTOutput("final_preview", height = "auto"))))
     )
   }
   )
 
+  # Column headings, shown once above the list rather than repeated on every
+  # row -- with a dozen output columns that repetition was most of the screen.
+  field_head <- function() {
+    div(class = "dp-fieldhead",
+      div(title = tr("final.include"), "✓"),
+      div(tr("final.source")),
+      div(tr("final.output")),
+      div(""))
+  }
+
   field_row <- function(f, i) {
     op_steps <- f$steps %||% list()
-    div(class = "dp-item",
-      div(class = "row g-2 align-items-center",
-        div(class = "col-auto", checkboxInput(paste0("fin_inc_", i), NULL, as_bool(f$include, TRUE))),
-        div(class = "col-3", div(class = "small text-muted", tr("final.source")),
-            div(class = "fw-semibold text-truncate", scalar(f$source, "(combined)"))),
-        div(class = "col-3", textInput(paste0("fin_out_", i), NULL, scalar(f$output, ""), width = "100%")),
-        div(class = "col-auto",
-          actionButton(paste0("fin_up_", i), "^", class = "btn-outline-secondary btn-sm"),
-          actionButton(paste0("fin_dn_", i), "v", class = "btn-outline-secondary btn-sm"),
-          actionButton(paste0("fin_addstep_", i), "+ format", class = "btn-outline-primary btn-sm"),
-          actionButton(paste0("fin_del_", i), "x", class = "btn-outline-danger btn-sm"))),
-      if (length(op_steps)) div(class = "mt-2",
+    included <- as_bool(f$include, TRUE)
+    btn <- function(id, label, cls, title) actionButton(id, label, class = cls, title = title)
+    div(class = "dp-field",
+      div(class = "dp-fieldrow",
+        checkboxInput(paste0("fin_inc_", i), NULL, included),
+        div(class = paste("dp-fieldsrc", if (!included) "is-off" else ""),
+            title = scalar(f$source, ""), scalar(f$source, "(combined)")),
+        textInput(paste0("fin_out_", i), NULL, scalar(f$output, ""), width = "100%"),
+        div(class = "dp-fieldbtns",
+          btn(paste0("fin_up_", i), "↑", "btn-outline-secondary btn-sm", tr("final.up")),
+          btn(paste0("fin_dn_", i), "↓", "btn-outline-secondary btn-sm", tr("final.down")),
+          btn(paste0("fin_addstep_", i), tr("final.addformat"),
+              "btn-outline-primary btn-sm", tr("final.steps")),
+          btn(paste0("fin_del_", i), "✕", "btn-outline-danger btn-sm", tr("common.remove")))),
+      if (length(op_steps)) div(class = "ps-4 pe-2 pb-1",
         lapply(seq_along(op_steps), function(k) step_ui(op_steps[[k]], paste0("fin_", i), k, i)))
     )
   }
@@ -1001,6 +1110,7 @@ server <- function(input, output, session) {
       res <- tryCatch(dp_run(rv$spec, rv$root, stop_after = "final",
                              preview_rows = PREVIEW_ROWS, engine = rv$engine),
                       error = function(e) { showNotification(conditionMessage(e), type = "error", duration = 10); NULL })
+      if (!is.null(res)) shinyjs::removeClass("final_preview_box", "dp-collapsed")
       output$final_preview <- renderDT({
         req(res)
         datatable(res$data, options = list(pageLength = 15, scrollX = TRUE, dom = "tip"),
@@ -1060,7 +1170,9 @@ server <- function(input, output, session) {
         uiOutput("run_summary"),
         verbatimTextOutput("run_log")
       )),
-      card(card_header(tr("run.preview")), card_body(DTOutput("result_preview")))
+      card(card_header(tr("run.preview")), card_body(
+        div(id = "result_preview_box", class = "dp-collapsed",
+            DTOutput("result_preview", height = "auto"))))
     )
   })
 
@@ -1106,6 +1218,7 @@ server <- function(input, output, session) {
       rv$result <- res
     })
     if (!is.null(rv$result)) {
+      shinyjs::removeClass("result_preview_box", "dp-collapsed")
       showNotification(tr("run.success",
         rows = nrow(rv$result$data), cols = ncol(rv$result$data),
         path = rv$result$export_path, secs = sprintf("%.2f", rv$result$elapsed)),

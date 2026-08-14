@@ -1,3 +1,4 @@
 output/
 uploads/
 dist/
+pipelines/ui_smoke_test.json
