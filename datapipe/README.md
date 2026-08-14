@@ -27,6 +27,12 @@ Rscript verify.R
 ./start-app.sh            # Windows: start-app.bat
 ```
 
+In the distribution archive the Windows launchers arrive as
+`start-app.bat.txt` and `run-pipeline.bat.txt` — the extra `.txt` keeps mail
+filters and download scanners from stripping them. Delete the `.txt` to use
+them, or ignore them entirely and call `Rscript app.R` directly. See
+`WINDOWS-README.txt` inside the archive.
+
 The example data ships with the archive. To regenerate it:
 `Rscript examples/make_examples.R`
 
